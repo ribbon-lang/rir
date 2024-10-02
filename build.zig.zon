@@ -1,0 +1,27 @@
+.{
+    .name = "rir",
+    .version = "0.1.0",
+    .dependencies = .{
+        .ISA = .{
+            .url = "https://github.com/ribbon-lang/rbc-isa/archive/91110a9d9d71b191c8af0d5a9c18aae234d779ec.tar.gz",
+            .hash = "1220c848b9aac27fe57f2a8d67e8f20832c8d8ff0ddd6b4e0fdec87773bbe650600d",
+        },
+        .Rbc = .{
+            .url = "https://github.com/ribbon-lang/rbc/archive/f2a49474ad2cc7767b1fdf6eaf430f6776133b68.tar.gz",
+            .hash = "12209ffb1a5d7c2333fd731cb69ef5520bad377e60decf10aaed955f2d30a1b9765a",
+        },
+        .ZigUtils = .{
+            .url = "https://github.com/noxabellus/zig-utils/archive/3af7b28cefb932d62db7b845a68d684d66619445.tar.gz",
+            .hash = "12201ca6097b31b861a41f7ca7472cd2cd74a6f8d56c49eba2c7a72f9f5bc0e1bf5d",
+        },
+    },
+    .paths = .{
+        "build.zig",
+        "build.zig.zon",
+        "src",
+        "tools",
+        "scripts",
+        "LICENSE",
+        "README.md",
+    },
+}
