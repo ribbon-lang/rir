@@ -30,7 +30,7 @@ pub fn build(b: *std.Build) !void {
     Rir.addImport("Rbc:Core", Rbc.module("Core"));
     Rir.addImport("Rbc:Builder", Rbc.module("Builder"));
 
-
+    const checkStep = b.step("check", "Run semantic analysis");
     const testStep = b.step("test", "Run unit tests");
 
     const testExe = b.addTest(.{
@@ -41,6 +41,8 @@ pub fn build(b: *std.Build) !void {
     testExe.root_module.addImport("ISA", ISA.module("ISA"));
     testExe.root_module.addImport("Rbc:Core", Rbc.module("Core"));
     testExe.root_module.addImport("Rbc:Builder", Rbc.module("Builder"));
+
+    checkStep.dependOn(&testExe.step);
 
     testStep.dependOn(&b.addRunArtifact(testExe).step);
 }
