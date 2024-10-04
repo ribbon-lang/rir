@@ -109,14 +109,23 @@ pub const Operand = union(enum) {
 };
 
 pub const BlockBuilder = struct {
-    parent: *FunctionBuilder,
+    function: *FunctionBuilder,
+    parent: ?*BlockBuilder,
     id: BlockId,
     type: TypeId,
-    successors: std.ArrayListUnmanaged(BlockId),
-    predecessors: std.ArrayListUnmanaged(BlockId),
-    incoming: std.ArrayListUnmanaged(TypeId),
-    outgoing: std.ArrayListUnmanaged(TypeId),
-    instructions: std.ArrayListUnmanaged(Instruction),
+
+    pub fn init(function: *FunctionBuilder, parent: ?*BlockBuilder, id: BlockId, tyId: TypeId) !*BlockBuilder {
+        const ptr = try function.root.allocator.create(BlockBuilder);
+
+        ptr.* = BlockBuilder {
+            .function = function,
+            .parent = parent,
+            .id = id,
+            .type = tyId,
+        };
+
+        return ptr;
+    }
 };
 
 pub const FunctionBuilder = struct {
