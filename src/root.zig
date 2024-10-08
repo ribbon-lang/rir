@@ -42,6 +42,8 @@ pub const OpCode = enum(u8) {
     ref_global,
     ref_upvalue,
 
+    discard,
+
     im_b, im_s, im_i, im_w,
 
     comptime {
@@ -84,6 +86,8 @@ pub const OpData = packed union {
     ref_function: FunctionId,
     ref_global: GlobalId,
     ref_upvalue: UpvalueId,
+
+    discard: void,
 
     im_b: Immediate(u8),
     im_s: Immediate(u16),
@@ -139,6 +143,135 @@ pub const Operand = union(enum) {
     };
 };
 
+pub const Global = struct {
+    id: GlobalId,
+    type: TypeId,
+    value: []u8,
+};
+
+pub const ForeignFunction = struct {
+    id: ForeignId,
+    type: TypeId,
+    locals: []TypeId,
+};
+
+pub const Type = union(enum) {
+    void: void,
+    bool: void,
+    u8: void, u16: void, u32: void, u64: void,
+    s8: void, s16: void, s32: void, s64: void,
+    f32: void, f64: void,
+    pointer: TypeId,
+    array: Type.Array,
+    product: []TypeId,
+    sum: Sum,
+    raw_sum: []TypeId,
+    function: Type.Function,
+
+    block: void,
+    handler_set: void,
+    evidence: Type.Function,
+
+    const BASIC_TYPE_NAMES = [_][:0]const u8 {
+        "void",
+        "bool",
+        "u8", "u16", "u32", "u64",
+        "s8", "s16", "s32", "s64",
+        "f32", "f64",
+        "block",
+    };
+
+    pub const BASIC_TYPE_IDS = type_ids: {
+        var type_ids = [1]TypeId { undefined } ** BASIC_TYPE_NAMES.len;
+
+        for (0..BASIC_TYPE_NAMES.len) |i| {
+            type_ids[i] = @truncate(i);
+        }
+
+        break :type_ids type_ids;
+    };
+
+    pub const BASIC_TYPES = types: {
+        var types = [1]Type { undefined } ** BASIC_TYPE_NAMES.len;
+
+        for (BASIC_TYPE_NAMES, 0..) |name, i| {
+            types[i] = @unionInit(Type, name, {});
+        }
+
+        break :types types;
+    };
+
+    pub const Sum = struct {
+        discriminator: TypeId,
+        types: []TypeId,
+
+        pub fn clone(self: *const Type.Sum, allocator: std.mem.Allocator) !Type.Sum {
+            return Type.Sum {
+                .discriminator = self.discriminator,
+                .types = try allocator.dupe(TypeId, self.types),
+            };
+        }
+
+        pub fn deinit(self: Type.Sum, allocator: std.mem.Allocator) void {
+            allocator.free(self.types);
+        }
+    };
+
+    pub const Array = struct {
+        length: usize,
+        element: TypeId,
+    };
+
+    pub const Function = struct {
+        return_type: TypeId,
+        termination_type: TypeId,
+        effects: []EvidenceId,
+        parameter_types: []TypeId,
+
+        pub fn deinit(self: Type.Function, allocator: std.mem.Allocator) void {
+            allocator.free(self.effects);
+            allocator.free(self.parameter_types);
+        }
+
+        pub fn clone(self: *const Type.Function, allocator: std.mem.Allocator) !Type.Function {
+            const effects = try allocator.dupe(EvidenceId, self.effects);
+            errdefer allocator.free(effects);
+
+            const parameter_types = try allocator.dupe(TypeId, self.parameter_types);
+            errdefer allocator.free(parameter_types);
+
+            return Type.Function {
+                .return_type = self.return_type,
+                .termination_type = self.termination_type,
+                .effects = effects,
+                .parameter_types = parameter_types,
+            };
+        }
+    };
+
+    pub fn clone(self: *const Type, allocator: std.mem.Allocator) !Type {
+        switch (self.*) {
+            .product => |field_types| return Type { .product = try allocator.dupe(TypeId, field_types) },
+            .sum => |sum| return Type { .sum = try sum.clone(allocator) },
+            .raw_sum => |field_types| return Type { .raw_sum = try allocator.dupe(TypeId, field_types) },
+            .function => |fun| return Type { .function = try fun.clone(allocator) },
+            .evidence => |fun| return Type { .evidence = try fun.clone(allocator) },
+            inline else => return self.*,
+        }
+    }
+
+    pub fn deinit(self: Type, allocator: std.mem.Allocator) void {
+        switch (self) {
+            .product => |field_types| allocator.free(field_types),
+            .sum => |sum| sum.deinit(allocator),
+            .raw_sum => |field_types| allocator.free(field_types),
+            .function => |fun| fun.deinit(allocator),
+            .evidence => |fun| fun.deinit(allocator),
+            inline else => {},
+        }
+    }
+};
+
 pub const BlockBuilder = struct {
     function: *FunctionBuilder,
     parent: ?*BlockBuilder,
@@ -159,7 +292,7 @@ pub const BlockBuilder = struct {
         return ptr;
     }
 
-    fn bCast(b: anytype) u8 {
+    inline fn bCast(b: anytype) u8 {
         return switch (@typeInfo(@TypeOf(b))) {
             .comptime_int => @as(u8, b),
             .int => |info|
@@ -173,7 +306,7 @@ pub const BlockBuilder = struct {
         };
     }
 
-    fn sCast(b: anytype) u16 {
+    inline fn sCast(b: anytype) u16 {
         return switch (@typeInfo(@TypeOf(b))) {
             .comptime_int => @as(u16, b),
             .int => |info|
@@ -187,7 +320,7 @@ pub const BlockBuilder = struct {
         };
     }
 
-    fn iCast(b: anytype) u32 {
+    inline fn iCast(b: anytype) u32 {
         return switch (@typeInfo(@TypeOf(b))) {
             .comptime_int => @as(u32, b),
             .int => |info|
@@ -201,7 +334,7 @@ pub const BlockBuilder = struct {
         };
     }
 
-    fn wCast(b: anytype) u64 {
+    inline fn wCast(b: anytype) u64 {
         return switch (@typeInfo(@TypeOf(b))) {
             .comptime_int => @as(u64, b),
             .int => |info|
@@ -439,6 +572,11 @@ pub const BlockBuilder = struct {
     }
 
 
+    pub fn discard(self: *BlockBuilder) !void {
+        try self.op(.discard, {});
+    }
+
+
     pub fn im_b(self: *BlockBuilder, x: anytype) !void {
         const ty = try self.function.root.typeIdFromNative(@TypeOf(x));
         try self.op(.im_b, .{.type = ty, .data = bCast(x)});
@@ -460,6 +598,7 @@ pub const BlockBuilder = struct {
         try self.wideImmediate(x);
     }
 
+
     comptime {
         for (std.meta.fieldNames(OpCode)) |opName| {
             if (!@hasDecl(BlockBuilder, opName)) {
@@ -475,7 +614,9 @@ pub const FunctionBuilder = struct {
     type: TypeId,
     blocks: std.ArrayListUnmanaged(*BlockBuilder),
     local_types: std.ArrayListUnmanaged(TypeId),
-    upvalue_types: std.ArrayListUnmanaged(TypeId) = .{},
+    parent: ?*FunctionBuilder = null,
+    upvalue_indices: std.ArrayListUnmanaged(LocalId) = .{},
+    handler_sets: std.ArrayListUnmanaged(*HandlerSetBuilder) = .{},
 
     pub fn init(root: *IrBuilder, id: FunctionId, tyId: TypeId) !*FunctionBuilder {
         const ptr = try root.allocator.create(FunctionBuilder);
@@ -532,25 +673,34 @@ pub const FunctionBuilder = struct {
         return self.local_types.items[l];
     }
 
-    // TODO: how to associate upvalues to locals in parent function
-    pub fn upvalue(self: *FunctionBuilder, tyId: TypeId) !UpvalueId {
-        const index = self.upvalue_types.items.len;
+    pub fn upvalue(self: *FunctionBuilder, parentLocal: LocalId) !UpvalueId {
+        if (self.parent) |parent| {
+            _ = try parent.getLocalType(parentLocal);
 
-        if (index >= MAX_LOCALS) {
-            return error.TooManyUpvalues;
+            const index = self.upvalue_indices.items.len;
+
+            if (index >= MAX_LOCALS) {
+                return error.TooManyUpvalues;
+            }
+
+            try self.upvalue_indices.append(self.root.allocator, parentLocal);
+
+            return @truncate(index);
+        } else {
+            return error.InvalidUpvalue;
         }
-
-        try self.upvalue_types.append(self.root.allocator, tyId);
-
-        return @truncate(index);
     }
 
     pub fn getUpvalueType(self: *const FunctionBuilder, u: UpvalueId) !TypeId {
-        if (u >= self.upvalue_types.items.len) {
-            return error.InvalidRegister;
-        }
+        if (self.parent) |parent| {
+            if (u >= self.upvalue_indices.items.len) {
+                return error.InvalidRegister;
+            }
 
-        return self.upvalue_types.items[u];
+            return parent.getLocalType(self.upvalue_indices.items[u]);
+        } else {
+            return error.InvalidUpvalue;
+        }
     }
 
     pub fn entry(self: *FunctionBuilder) !*BlockBuilder {
@@ -578,147 +728,40 @@ pub const FunctionBuilder = struct {
 
         return self.blocks.items[id];
     }
-};
 
-pub const ForeignFunction = struct {
-    id: ForeignId,
-    type: TypeId,
-    locals: []TypeId,
-};
+    pub fn handlerSet(self: *FunctionBuilder) !*HandlerSetBuilder {
+        const index = self.handler_sets.items.len;
 
-pub const Global = struct {
-    id: GlobalId,
-    type: TypeId,
-    value: []u8,
-};
-
-pub const Type = union(enum) {
-    void: void,
-    bool: void,
-    u8: void, u16: void, u32: void, u64: void,
-    s8: void, s16: void, s32: void, s64: void,
-    f32: void, f64: void,
-    pointer: TypeId,
-    array: Type.Array,
-    product: []TypeId,
-    sum: Sum,
-    raw_sum: []TypeId,
-    function: Type.Function,
-
-    block: void,
-    handler_set: void,
-    evidence: Type.Function,
-
-    const BASIC_TYPE_NAMES = [_][:0]const u8 {
-        "void",
-        "bool",
-        "u8", "u16", "u32", "u64",
-        "s8", "s16", "s32", "s64",
-        "f32", "f64",
-        "block",
-    };
-
-    pub const BASIC_TYPE_IDS = type_ids: {
-        var type_ids = [1]TypeId { undefined } ** BASIC_TYPE_NAMES.len;
-
-        for (0..BASIC_TYPE_NAMES.len) |i| {
-            type_ids[i] = @truncate(i);
+        if (index >= MAX_HANDLER_SETS) {
+            return error.TooManyHandlerSets;
         }
 
-        break :type_ids type_ids;
-    };
+        const builder = try HandlerSetBuilder.init(self, @truncate(index));
 
-    pub const BASIC_TYPES = types: {
-        var types = [1]Type { undefined } ** BASIC_TYPE_NAMES.len;
+        try self.handler_sets.append(self.root.allocator, builder);
 
-        for (BASIC_TYPE_NAMES, 0..) |name, i| {
-            types[i] = @unionInit(Type, name, {});
-        }
-
-        break :types types;
-    };
-
-    pub const Sum = struct {
-        discriminator: TypeId,
-        types: []TypeId,
-
-        pub fn clone(self: *const Type.Sum, allocator: std.mem.Allocator) !Type.Sum {
-            return Type.Sum {
-                .discriminator = self.discriminator,
-                .types = try allocator.dupe(TypeId, self.types),
-            };
-        }
-
-        pub fn deinit(self: Type.Sum, allocator: std.mem.Allocator) void {
-            allocator.free(self.types);
-        }
-    };
-
-    pub const Array = struct {
-        length: usize,
-        element: TypeId,
-    };
-
-    pub const Function = struct {
-        return_type: TypeId,
-        termination_type: TypeId,
-        effects: []EvidenceId,
-        parameter_types: []TypeId,
-
-        pub fn deinit(self: Type.Function, allocator: std.mem.Allocator) void {
-            allocator.free(self.effects);
-            allocator.free(self.parameter_types);
-        }
-
-        pub fn clone(self: *const Type.Function, allocator: std.mem.Allocator) !Type.Function {
-            const effects = try allocator.dupe(EvidenceId, self.effects);
-            errdefer allocator.free(effects);
-
-            const parameter_types = try allocator.dupe(TypeId, self.parameter_types);
-            errdefer allocator.free(parameter_types);
-
-            return Type.Function {
-                .return_type = self.return_type,
-                .termination_type = self.termination_type,
-                .effects = effects,
-                .parameter_types = parameter_types,
-            };
-        }
-    };
-
-    pub fn clone(self: *const Type, allocator: std.mem.Allocator) !Type {
-        switch (self.*) {
-            .product => |field_types| return Type { .product = try allocator.dupe(TypeId, field_types) },
-            .sum => |sum| return Type { .sum = try sum.clone(allocator) },
-            .raw_sum => |field_types| return Type { .raw_sum = try allocator.dupe(TypeId, field_types) },
-            .function => |fun| return Type { .function = try fun.clone(allocator) },
-            .evidence => |fun| return Type { .evidence = try fun.clone(allocator) },
-            inline else => return self.*,
-        }
+        return builder;
     }
 
-    pub fn deinit(self: Type, allocator: std.mem.Allocator) void {
-        switch (self) {
-            .product => |field_types| allocator.free(field_types),
-            .sum => |sum| sum.deinit(allocator),
-            .raw_sum => |field_types| allocator.free(field_types),
-            .function => |fun| fun.deinit(allocator),
-            .evidence => |fun| fun.deinit(allocator),
-            inline else => {},
+    pub fn getHandlerSet(self: *FunctionBuilder, id: HandlerSetId) !*HandlerSetBuilder {
+        if (id >= self.handler_sets.items.len) {
+            return error.InvalidHandlerSet;
         }
+
+        return self.handler_sets.items[id];
     }
 };
 
 pub const HandlerSetBuilder = struct {
-    root: *IrBuilder,
+    parent: *FunctionBuilder,
     id: HandlerSetId,
     handlers: HandlerMap = .{},
 
-    pub fn init(root: *IrBuilder, id: HandlerSetId) !*HandlerSetBuilder {
-        const ptr = try root.allocator.create(HandlerSetBuilder);
+    pub fn init(parent: *FunctionBuilder, id: HandlerSetId) !*HandlerSetBuilder {
+        const ptr = try parent.root.allocator.create(HandlerSetBuilder);
 
         ptr.* = HandlerSetBuilder {
-            .root = root,
+            .parent = parent,
             .id = id,
         };
 
@@ -730,11 +773,13 @@ pub const HandlerSetBuilder = struct {
             return error.EvidenceOverlap;
         }
 
-        const ev = try self.root.getEvidence(evId);
+        const evTy = try self.parent.root.getEvidence(evId);
 
-        const builder = try self.root.function(ev);
+        const builder = try self.parent.root.function(evTy);
 
-        try self.handlers.put(self.root.allocator, evId, builder);
+        builder.parent = self.parent;
+
+        try self.handlers.put(self.parent.root.allocator, evId, builder);
 
         return builder;
     }
@@ -758,7 +803,6 @@ pub const IrBuilder = struct {
     global_list: GlobalList = .{},
     function_list: FunctionList = .{},
     foreign_function_list: ForeignFunctionList = .{},
-    handler_set_list: HandlerSetList = .{},
     evidence_list: EvidenceList = .{},
 
     /// Allocator provided should be an arena or a similar allocator,
@@ -973,28 +1017,6 @@ pub const IrBuilder = struct {
         }
 
         return self.foreign_function_list.items[id];
-    }
-
-    pub fn handlerSet(self: *IrBuilder) !*HandlerSetBuilder {
-        const index = self.handler_set_list.items.len;
-
-        if (index >= MAX_HANDLER_SETS) {
-            return error.TooManyHandlerSets;
-        }
-
-        const builder = try HandlerSetBuilder.init(self, @truncate(index));
-
-        try self.handler_set_list.append(self.allocator, builder);
-
-        return builder;
-    }
-
-    pub fn getHandlerSet(self: *IrBuilder, id: HandlerSetId) !*HandlerSetBuilder {
-        if (id >= self.handler_set_list.items.len) {
-            return error.InvalidHandlerSet;
-        }
-
-        return self.handler_set_list.items[id];
     }
 
     pub fn evidence(self: *IrBuilder, tyId: TypeId) !EvidenceId {
