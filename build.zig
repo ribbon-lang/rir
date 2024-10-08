@@ -37,9 +37,6 @@ pub fn build(b: *std.Build) !void {
     });
 
     Builder.addImport("ZigUtils", ZigUtils.module("ZigUtils"));
-    Builder.addImport("ISA", ISA.module("ISA"));
-    Builder.addImport("Rbc:Core", Rbc.module("Core"));
-    Builder.addImport("Rbc:Builder", Rbc.module("Builder"));
     Builder.addImport("Core", Core);
 
     const checkStep = b.step("check", "Run semantic analysis");
@@ -59,9 +56,6 @@ pub fn build(b: *std.Build) !void {
     });
 
     testBuilder.root_module.addImport("ZigUtils", ZigUtils.module("ZigUtils"));
-    testBuilder.root_module.addImport("ISA", ISA.module("ISA"));
-    testBuilder.root_module.addImport("Rbc:Core", Rbc.module("Core"));
-    testBuilder.root_module.addImport("Rbc:Builder", Rbc.module("Builder"));
     testBuilder.root_module.addImport("Core", &testCore.root_module);
 
     checkStep.dependOn(&testCore.step);

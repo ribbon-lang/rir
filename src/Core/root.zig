@@ -4,9 +4,9 @@ const ISA = @import("ISA");
 const RbcCore = @import("Rbc:Core");
 const RbcBuilder = @import("Rbc:Builder");
 
-pub const Type = @import("Type.zig").Type;
 pub const Op = @import("Op.zig");
-pub const Operand = @import("Operand.zig");
+pub const Operand = @import("Operand.zig").Operand;
+pub const Type = @import("Type.zig").Type;
 
 pub const RegisterId = RbcCore.RegisterIndex;
 pub const HandlerSetId = RbcCore.HandlerSetIndex;
