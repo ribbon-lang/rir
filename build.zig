@@ -19,30 +19,54 @@ pub fn build(b: *std.Build) !void {
         .optimize = defaultOptimize,
     });
 
-    const Rir = b.addModule("Rir", .{
-        .root_source_file = b.path("src/root.zig"),
+    const Core = b.addModule("Core", .{
+        .root_source_file = b.path("src/Core/root.zig"),
         .target = defaultTarget,
         .optimize = defaultOptimize,
     });
 
-    Rir.addImport("ZigUtils", ZigUtils.module("ZigUtils"));
-    Rir.addImport("ISA", ISA.module("ISA"));
-    Rir.addImport("Rbc:Core", Rbc.module("Core"));
-    Rir.addImport("Rbc:Builder", Rbc.module("Builder"));
+    Core.addImport("ZigUtils", ZigUtils.module("ZigUtils"));
+    Core.addImport("ISA", ISA.module("ISA"));
+    Core.addImport("Rbc:Core", Rbc.module("Core"));
+    Core.addImport("Rbc:Builder", Rbc.module("Builder"));
+
+    const Builder = b.addModule("Builder", .{
+        .root_source_file = b.path("src/Builder/root.zig"),
+        .target = defaultTarget,
+        .optimize = defaultOptimize,
+    });
+
+    Builder.addImport("ZigUtils", ZigUtils.module("ZigUtils"));
+    Builder.addImport("ISA", ISA.module("ISA"));
+    Builder.addImport("Rbc:Core", Rbc.module("Core"));
+    Builder.addImport("Rbc:Builder", Rbc.module("Builder"));
+    Builder.addImport("Core", Core);
 
     const checkStep = b.step("check", "Run semantic analysis");
     const testStep = b.step("test", "Run unit tests");
 
-    const testExe = b.addTest(.{
-        .root_source_file = b.path("src/root.zig"),
+    const testCore = b.addTest(.{
+        .root_source_file = b.path("src/Core/root.zig"),
     });
 
-    testExe.root_module.addImport("ZigUtils", ZigUtils.module("ZigUtils"));
-    testExe.root_module.addImport("ISA", ISA.module("ISA"));
-    testExe.root_module.addImport("Rbc:Core", Rbc.module("Core"));
-    testExe.root_module.addImport("Rbc:Builder", Rbc.module("Builder"));
+    testCore.root_module.addImport("ZigUtils", ZigUtils.module("ZigUtils"));
+    testCore.root_module.addImport("ISA", ISA.module("ISA"));
+    testCore.root_module.addImport("Rbc:Core", Rbc.module("Core"));
+    testCore.root_module.addImport("Rbc:Builder", Rbc.module("Builder"));
 
-    checkStep.dependOn(&testExe.step);
+    const testBuilder = b.addTest(.{
+        .root_source_file = b.path("src/Builder/root.zig"),
+    });
 
-    testStep.dependOn(&b.addRunArtifact(testExe).step);
+    testBuilder.root_module.addImport("ZigUtils", ZigUtils.module("ZigUtils"));
+    testBuilder.root_module.addImport("ISA", ISA.module("ISA"));
+    testBuilder.root_module.addImport("Rbc:Core", Rbc.module("Core"));
+    testBuilder.root_module.addImport("Rbc:Builder", Rbc.module("Builder"));
+    testBuilder.root_module.addImport("Core", &testCore.root_module);
+
+    checkStep.dependOn(&testCore.step);
+    checkStep.dependOn(&testBuilder.step);
+
+    testStep.dependOn(&b.addRunArtifact(testCore).step);
+    testStep.dependOn(&b.addRunArtifact(testBuilder).step);
 }
