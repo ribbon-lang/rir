@@ -1,6 +1,8 @@
 const std = @import("std");
+const MiscUtils = @import("ZigUtils").Misc;
 
 const Core = @import("root.zig");
+
 
 pub const Type = union(enum) {
     void: void,
@@ -18,6 +20,128 @@ pub const Type = union(enum) {
     block: void,
     handler_set: void,
     evidence: Type.Function,
+
+    pub const Map = struct {
+        inner: std.ArrayHashMapUnmanaged(Core.Type, void, MiscUtils.SimpleHashContext, true) = .{},
+
+        /// Calls `Core.Type.clone` on the input, if the type is not found in the map
+        pub fn typeId(self: *Map, allocator: std.mem.Allocator, ty: Core.Type) !Core.TypeId {
+            if (self.inner.getIndex(ty)) |index| {
+                return @truncate(index);
+            }
+
+            const index = self.inner.count();
+
+            if (index >= Core.MAX_TYPES) {
+                return error.TooManyTypes;
+            }
+
+            try self.inner.put(allocator, try ty.clone(allocator), {});
+
+            return @truncate(index);
+        }
+
+        /// Does not call `Core.Type.clone` on the input
+        pub fn typeIdPreallocated(self: *Map, allocator: std.mem.Allocator, ty: Core.Type) !Core.TypeId {
+            if (self.inner.getIndex(ty)) |index| {
+                return @truncate(index);
+            }
+
+            const index = self.inner.count();
+
+            if (index >= Core.MAX_TYPES) {
+                return error.TooManyTypes;
+            }
+
+            try self.inner.put(allocator, ty, {});
+
+            return @truncate(index);
+        }
+
+        pub fn typeFromNative(self: *const Map, comptime T: type, allocator: std.mem.Allocator) !Core.Type {
+            switch (T) {
+                void => return .void,
+                bool => return .bool,
+                u8 => return .u8, u16 => return .u16, u32 => return .u32, u64 => return .u64,
+                i8 => return .s8, i16 => return .s16, i32 => return .s32, i64 => return .s64,
+                f32 => return .f32, f64 => return .f64,
+
+                else => switch (@typeInfo(T)) {
+                    .pointer => |info| return Core.Type { .pointer = try self.typeIdFromNative(info.child, allocator) },
+                    .array => |info| return Core.Type { .array = .{
+                        .length = info.len,
+                        .element = try self.typeIdFromNative(info.child, allocator),
+                    } },
+                    .@"struct" => |info| {
+                        var field_types = allocator.alloc(Core.TypeId, info.fields.len);
+                        errdefer allocator.free(field_types);
+
+                        for (info.fields, 0..) |field, i| {
+                            field_types[i] = try self.typeIdFromNative(field.type, allocator);
+                        }
+
+                        return Core.Type { .product = field_types };
+                    },
+                    .@"enum" => |info| return self.typeFromNative(info.tag_type, allocator),
+                    .@"union" => |info| {
+                        var field_types = allocator.alloc(Core.TypeId, info.fields.len);
+                        errdefer allocator.free(field_types);
+
+                        for (info.fields, 0..) |field, i| {
+                            field_types[i] = try self.typeIdFromNative(field.type, allocator);
+                        }
+
+                        if (info.tag_type) |TT| {
+                            return Core.Type { .sum = .{
+                                .discriminator = try self.typeIdFromNative(TT, allocator),
+                                .types = field_types,
+                            } };
+                        } else {
+                            return Core.Type { .raw_sum = field_types };
+                        }
+                    },
+                    .@"fn" => |info| {
+                        const return_type = try self.typeIdFromNative(info.return_type.?, allocator);
+                        const termination_type = try self.typeIdFromNative(void, allocator);
+
+                        const effects = allocator.alloc(Core.EvidenceId, 0);
+                        errdefer allocator.free(effects);
+
+                        var parameter_types = allocator.alloc(Core.TypeId, info.param_info.len);
+                        errdefer allocator.free(parameter_types);
+
+                        for (info.param_info, 0..) |param, i| {
+                            parameter_types[i] = try self.typeIdFromNative(param.type, allocator);
+                        }
+
+                        return Core.Type { .function = .{
+                            .return_type = return_type,
+                            .termination_type = termination_type,
+                            .effects = effects,
+                            .parameter_types = parameter_types,
+                        } };
+                    },
+
+                    else => @compileError("cannot convert type `" ++ @typeName(T) ++ "` to Core.Type"),
+                }
+            }
+        }
+
+        pub fn typeIdFromNative(self: *Map, comptime T: type, allocator: std.mem.Allocator) !Core.TypeId {
+            const ty = try self.typeFromNative(T);
+            errdefer Core.Type.deinit(ty, allocator);
+
+            return self.typeIdPreallocated(allocator, ty);
+        }
+
+        pub fn getType(self: *Map, id: Core.TypeId) !Core.Type {
+            if (id >= self.inner.count()) {
+                return error.InvalidType;
+            }
+
+            return self.inner.keys()[id];
+        }
+    };
 
     const BASIC_TYPE_NAMES = [_][:0]const u8 {
         "void",
