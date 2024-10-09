@@ -30,8 +30,6 @@ pub fn init(root: *Builder, id: Core.FunctionId, tyId: Core.TypeId) !*FunctionBu
 
     const entryBlock = try BlockBuilder.init(ptr, null, 0);
 
-    entryBlock.type = funcTy.return_type;
-
     try blocks.append(root.allocator, entryBlock);
 
     var local_types = std.ArrayListUnmanaged(Core.TypeId){};

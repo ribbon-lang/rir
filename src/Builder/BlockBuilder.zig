@@ -10,7 +10,6 @@ const BlockBuilder = @This();
 function: *FunctionBuilder,
 parent: ?*BlockBuilder,
 id: Core.BlockId,
-type: ?Core.TypeId = null,
 has_exit: bool = false,
 instructions: std.ArrayListUnmanaged(Core.Instruction) = .{},
 
