@@ -19,6 +19,7 @@ parent: ?*FunctionBuilder = null,
 upvalue_indices: std.ArrayListUnmanaged(Core.LocalId) = .{},
 handler_sets: std.ArrayListUnmanaged(*HandlerSetBuilder) = .{},
 
+
 pub fn init(root: *Builder, id: Core.FunctionId, tyId: Core.TypeId) !*FunctionBuilder {
     const ptr = try root.allocator.create(FunctionBuilder);
 

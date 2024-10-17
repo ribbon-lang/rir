@@ -13,6 +13,7 @@ id: Core.BlockId,
 has_exit: bool = false,
 instructions: std.ArrayListUnmanaged(Core.Instruction) = .{},
 
+
 pub fn init(function: *FunctionBuilder, parent: ?*BlockBuilder, id: Core.BlockId) !*BlockBuilder {
     const ptr = try function.root.allocator.create(BlockBuilder);
 

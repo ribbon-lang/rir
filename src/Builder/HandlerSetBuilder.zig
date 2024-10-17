@@ -9,9 +9,11 @@ const FunctionBuilder = Builder.FunctionBuilder;
 
 const HandlerSetBuilder = @This();
 
+
 parent: *FunctionBuilder,
 id: Core.HandlerSetId,
 handlers: std.ArrayHashMapUnmanaged(Core.EvidenceId, *FunctionBuilder, MiscUtils.SimpleHashContext, false) = .{},
+
 
 pub fn init(parent: *FunctionBuilder, id: Core.HandlerSetId) !*HandlerSetBuilder {
     const ptr = try parent.root.allocator.create(HandlerSetBuilder);

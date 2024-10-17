@@ -13,11 +13,12 @@ const Builder = @This();
 
 
 allocator: std.mem.Allocator,
-type_map: Core.Type.Map,
+type_map: Core.Type.Map = .{},
 global_list: std.ArrayListUnmanaged(Core.Global) = .{},
 function_list: std.ArrayListUnmanaged(*FunctionBuilder) = .{},
 foreign_function_list: std.ArrayListUnmanaged(Core.ForeignFunction) = .{},
 evidence_list: std.ArrayListUnmanaged(Core.TypeId) = .{},
+
 
 /// Allocator provided should be an arena or a similar allocator,
 /// that does not care about freeing individual allocations

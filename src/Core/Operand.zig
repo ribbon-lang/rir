@@ -1,5 +1,6 @@
 const Core = @import("root.zig");
 
+
 pub const Operand = union(enum) {
     intermediate: Intermediate,
     immediate: Immediate,

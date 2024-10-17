@@ -5,6 +5,9 @@ const RbcCore = @import("Rbc:Core");
 const Core = @import("root.zig");
 
 
+pub const ZeroCheck = enum(u1) { zero, non_zero };
+pub const OptZeroCheck = enum(u2) { none, zero, non_zero };
+
 pub const Code = enum(u8) {
     // ISA instructions:
     nop,
@@ -47,9 +50,6 @@ comptime {
         }
     }
 }
-
-pub const ZeroCheck = enum(u1) { zero, non_zero };
-pub const OptZeroCheck = enum(u2) { none, zero, non_zero };
 
 pub const Data = packed union {
     nop: void,
