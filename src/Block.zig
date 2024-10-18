@@ -1,23 +1,21 @@
 const std = @import("std");
-const Core = @import("Core");
 
-const Builder = @import("root.zig");
-const FunctionBuilder = Builder.FunctionBuilder;
+const IR = @import("root.zig");
 
-const BlockBuilder = @This();
+const Block = @This();
 
 
-function: *FunctionBuilder,
-parent: ?*BlockBuilder,
-id: Core.BlockId,
+function: *IR.Function,
+parent: ?*Block,
+id: IR.BlockId,
 has_exit: bool = false,
-instructions: std.ArrayListUnmanaged(Core.Instruction) = .{},
+instructions: std.ArrayListUnmanaged(IR.Instruction) = .{},
 
 
-pub fn init(function: *FunctionBuilder, parent: ?*BlockBuilder, id: Core.BlockId) !*BlockBuilder {
-    const ptr = try function.root.allocator.create(BlockBuilder);
+pub fn init(function: *IR.Function, parent: ?*Block, id: IR.BlockId) !*Block {
+    const ptr = try function.root.allocator.create(Block);
 
-    ptr.* = BlockBuilder {
+    ptr.* = Block {
         .function = function,
         .parent = parent,
         .id = id,
@@ -83,26 +81,26 @@ inline fn wCast(b: anytype) u64 {
 }
 
 
-inline fn wideImmediate(self: *BlockBuilder, x: u64) !void {
-    try @call(.always_inline, std.ArrayListUnmanaged(Core.Instruction).append, .{
+inline fn wideImmediate(self: *Block, x: u64) !void {
+    try @call(.always_inline, std.ArrayListUnmanaged(IR.Instruction).append, .{
         &self.instructions,
         self.function.root.allocator,
-        @as(Core.Instruction, @bitCast(wCast(x))),
+        @as(IR.Instruction, @bitCast(wCast(x))),
     });
 }
 
-inline fn op(self: *BlockBuilder, comptime code: Core.Op.Code, data: anytype) !void {
-    try @call(.always_inline, std.ArrayListUnmanaged(Core.Instruction).append, .{
+inline fn op(self: *Block, comptime code: IR.Op.Code, data: anytype) !void {
+    try @call(.always_inline, std.ArrayListUnmanaged(IR.Instruction).append, .{
         &self.instructions,
         self.function.root.allocator,
-        Core.Instruction {
+        IR.Instruction {
             .code = code,
-            .data = @unionInit(Core.Op.Data, @tagName(code), data),
+            .data = @unionInit(IR.Op.Data, @tagName(code), data),
         },
     });
 }
 
-inline fn exitOp(self: *BlockBuilder, comptime code: Core.Op.Code, data: anytype) !void {
+inline fn exitOp(self: *Block, comptime code: IR.Op.Code, data: anytype) !void {
     if (self.has_exit) {
         return error.MultipleExits;
     }
@@ -111,35 +109,35 @@ inline fn exitOp(self: *BlockBuilder, comptime code: Core.Op.Code, data: anytype
 }
 
 
-pub fn nop(self: *BlockBuilder) !void {
+pub fn nop(self: *Block) !void {
     try self.op(.nop, {});
 }
 
-pub fn halt(self: *BlockBuilder) !void {
+pub fn halt(self: *Block) !void {
     try self.exitOp(.halt, {});
 }
 
-pub fn trap(self: *BlockBuilder) !void {
+pub fn trap(self: *Block) !void {
     try self.exitOp(.trap, {});
 }
 
-pub fn block(self: *BlockBuilder) !void {
+pub fn block(self: *Block) !void {
     try self.op(.block, {});
 }
 
-pub fn with(self: *BlockBuilder) !void {
+pub fn with(self: *Block) !void {
     try self.op(.with, {});
 }
 
-pub fn @"if"(self: *BlockBuilder, x: Core.Op.ZeroCheck) !void {
+pub fn @"if"(self: *Block, x: IR.Op.ZeroCheck) !void {
     try self.op(.@"if", x);
 }
 
-pub fn when(self: *BlockBuilder, x: Core.Op.ZeroCheck) !void {
+pub fn when(self: *Block, x: IR.Op.ZeroCheck) !void {
     try self.op(.when, x);
 }
 
-pub fn re(self: *BlockBuilder, x: Core.Op.OptZeroCheck) !void {
+pub fn re(self: *Block, x: IR.Op.OptZeroCheck) !void {
     if (x != .none) {
         try self.op(.re, x);
     } else {
@@ -147,7 +145,7 @@ pub fn re(self: *BlockBuilder, x: Core.Op.OptZeroCheck) !void {
     }
 }
 
-pub fn br(self: *BlockBuilder, x: Core.Op.OptZeroCheck) !void {
+pub fn br(self: *Block, x: IR.Op.OptZeroCheck) !void {
     if (x != .none) {
         try self.op(.br, x);
     } else {
@@ -155,189 +153,189 @@ pub fn br(self: *BlockBuilder, x: Core.Op.OptZeroCheck) !void {
     }
 }
 
-pub fn call(self: *BlockBuilder) !void {
+pub fn call(self: *Block) !void {
     try self.op(.call, {});
 }
 
-pub fn prompt(self: *BlockBuilder) !void {
+pub fn prompt(self: *Block) !void {
     try self.op(.prompt, {});
 }
 
-pub fn ret(self: *BlockBuilder) !void {
+pub fn ret(self: *Block) !void {
     try self.exitOp(.ret, {});
 }
 
-pub fn term(self: *BlockBuilder) !void {
+pub fn term(self: *Block) !void {
     try self.exitOp(.term, {});
 }
 
-pub fn alloca(self: *BlockBuilder, x: Core.RegisterLocalOffset) !void {
+pub fn alloca(self: *Block, x: IR.RegisterLocalOffset) !void {
     try self.op(.alloca, x);
 }
 
-pub fn addr(self: *BlockBuilder) !void {
+pub fn addr(self: *Block) !void {
     try self.op(.addr, {});
 }
 
-pub fn read(self: *BlockBuilder) !void {
+pub fn read(self: *Block) !void {
     try self.op(.read, {});
 }
 
-pub fn write(self: *BlockBuilder) !void {
+pub fn write(self: *Block) !void {
     try self.op(.write, {});
 }
 
-pub fn load(self: *BlockBuilder) !void {
+pub fn load(self: *Block) !void {
     try self.op(.load, {});
 }
 
-pub fn store(self: *BlockBuilder) !void {
+pub fn store(self: *Block) !void {
     try self.op(.store, {});
 }
 
-pub fn clear(self: *BlockBuilder) !void {
+pub fn clear(self: *Block) !void {
     try self.op(.clear, {});
 }
 
-pub fn swap(self: *BlockBuilder) !void {
+pub fn swap(self: *Block) !void {
     try self.op(.swap, {});
 }
 
-pub fn copy(self: *BlockBuilder) !void {
+pub fn copy(self: *Block) !void {
     try self.op(.copy, {});
 }
 
-pub fn add(self: *BlockBuilder) !void {
+pub fn add(self: *Block) !void {
     try self.op(.add, {});
 }
 
-pub fn sub(self: *BlockBuilder) !void {
+pub fn sub(self: *Block) !void {
     try self.op(.sub, {});
 }
 
-pub fn mul(self: *BlockBuilder) !void {
+pub fn mul(self: *Block) !void {
     try self.op(.mul, {});
 }
 
-pub fn div(self: *BlockBuilder) !void {
+pub fn div(self: *Block) !void {
     try self.op(.div, {});
 }
 
-pub fn rem(self: *BlockBuilder) !void {
+pub fn rem(self: *Block) !void {
     try self.op(.rem, {});
 }
 
-pub fn neg(self: *BlockBuilder) !void {
+pub fn neg(self: *Block) !void {
     try self.op(.neg, {});
 }
 
-pub fn band(self: *BlockBuilder) !void {
+pub fn band(self: *Block) !void {
     try self.op(.band, {});
 }
 
-pub fn bor(self: *BlockBuilder) !void {
+pub fn bor(self: *Block) !void {
     try self.op(.bor, {});
 }
 
-pub fn bxor(self: *BlockBuilder) !void {
+pub fn bxor(self: *Block) !void {
     try self.op(.bxor, {});
 }
 
-pub fn bnot(self: *BlockBuilder) !void {
+pub fn bnot(self: *Block) !void {
     try self.op(.bnot, {});
 }
 
-pub fn bshiftl(self: *BlockBuilder) !void {
+pub fn bshiftl(self: *Block) !void {
     try self.op(.bshiftl, {});
 }
 
-pub fn bshiftr(self: *BlockBuilder) !void {
+pub fn bshiftr(self: *Block) !void {
     try self.op(.bshiftr, {});
 }
 
-pub fn eq(self: *BlockBuilder) !void {
+pub fn eq(self: *Block) !void {
     try self.op(.eq, {});
 }
 
-pub fn ne(self: *BlockBuilder) !void {
+pub fn ne(self: *Block) !void {
     try self.op(.ne, {});
 }
 
-pub fn lt(self: *BlockBuilder) !void {
+pub fn lt(self: *Block) !void {
     try self.op(.lt, {});
 }
 
-pub fn gt(self: *BlockBuilder) !void {
+pub fn gt(self: *Block) !void {
     try self.op(.gt, {});
 }
 
-pub fn le(self: *BlockBuilder) !void {
+pub fn le(self: *Block) !void {
     try self.op(.le, {});
 }
 
-pub fn ge(self: *BlockBuilder) !void {
+pub fn ge(self: *Block) !void {
     try self.op(.ge, {});
 }
 
-pub fn ext(self: *BlockBuilder, x: Core.BitSize) !void {
+pub fn ext(self: *Block, x: IR.BitSize) !void {
     try self.op(.ext, x);
 }
 
-pub fn trunc(self: *BlockBuilder, x: Core.BitSize) !void {
+pub fn trunc(self: *Block, x: IR.BitSize) !void {
     try self.op(.trunc, x);
 }
 
-pub fn cast(self: *BlockBuilder, x: Core.TypeId) !void {
+pub fn cast(self: *Block, x: IR.TypeId) !void {
     try self.op(.cast, x);
 }
 
 
-pub fn new_local(self: *BlockBuilder, x: Core.TypeId) !void {
+pub fn new_local(self: *Block, x: IR.TypeId) !void {
     try self.op(.new_local, x);
 }
 
-pub fn ref_local(self: *BlockBuilder, x: Core.LocalId) !void {
+pub fn ref_local(self: *Block, x: IR.LocalId) !void {
     try self.op(.ref_local, x);
 }
 
-pub fn ref_block(self: *BlockBuilder, x: Core.BlockId) !void {
+pub fn ref_block(self: *Block, x: IR.BlockId) !void {
     try self.op(.ref_block, x);
 }
 
-pub fn ref_function(self: *BlockBuilder, x: Core.FunctionId) !void {
+pub fn ref_function(self: *Block, x: IR.FunctionId) !void {
     try self.op(.ref_function, x);
 }
 
-pub fn ref_global(self: *BlockBuilder, x: Core.GlobalId) !void {
+pub fn ref_global(self: *Block, x: IR.GlobalId) !void {
     try self.op(.ref_global, x);
 }
 
-pub fn ref_upvalue(self: *BlockBuilder, x: Core.UpvalueId) !void {
+pub fn ref_upvalue(self: *Block, x: IR.UpvalueId) !void {
     try self.op(.ref_upvalue, x);
 }
 
 
-pub fn discard(self: *BlockBuilder) !void {
+pub fn discard(self: *Block) !void {
     try self.op(.discard, {});
 }
 
 
-pub fn im_b(self: *BlockBuilder, x: anytype) !void {
+pub fn im_b(self: *Block, x: anytype) !void {
     const ty = try self.function.root.typeIdFromNative(@TypeOf(x));
     try self.op(.im_b, .{.type = ty, .data = bCast(x)});
 }
 
-pub fn im_s(self: *BlockBuilder, x: anytype) !void {
+pub fn im_s(self: *Block, x: anytype) !void {
     const ty = try self.function.root.typeIdFromNative(@TypeOf(x));
     try self.op(.im_s, .{.type = ty, .data = sCast(x)});
 }
 
-pub fn im_i(self: *BlockBuilder, x: anytype) !void {
+pub fn im_i(self: *Block, x: anytype) !void {
     const ty = try self.function.root.typeIdFromNative(@TypeOf(x));
     try self.op(.im_i, .{.type = ty, .data = iCast(x)});
 }
 
-pub fn im_w(self: *BlockBuilder, x: anytype) !void {
+pub fn im_w(self: *Block, x: anytype) !void {
     const ty = try self.function.root.typeIdFromNative(@TypeOf(x));
     try self.op(.im_w, .{.type = ty});
     try self.wideImmediate(x);
@@ -345,9 +343,9 @@ pub fn im_w(self: *BlockBuilder, x: anytype) !void {
 
 
 comptime {
-    for (std.meta.fieldNames(Core.Op.Code)) |opName| {
-        if (!@hasDecl(BlockBuilder, opName)) {
-            @compileError("missing BlockBuilder method: `" ++ opName ++ "`");
+    for (std.meta.fieldNames(IR.Op.Code)) |opName| {
+        if (!@hasDecl(Block, opName)) {
+            @compileError("missing Block method: `" ++ opName ++ "`");
         }
     }
 }

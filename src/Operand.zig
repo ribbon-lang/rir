@@ -1,24 +1,24 @@
-const Core = @import("root.zig");
+const IR = @import("root.zig");
 
 
 pub const Operand = union(enum) {
     intermediate: Intermediate,
     immediate: Immediate,
-    block: Core.BlockId,
-    function: Core.FunctionId,
-    global: Core.GlobalId,
-    upvalue: Core.UpvalueId,
-    handler_set: Core.HandlerSetId,
-    evidence: Core.EvidenceId,
-    local: Core.LocalId,
+    block: IR.BlockId,
+    function: IR.FunctionId,
+    global: IR.GlobalId,
+    upvalue: IR.UpvalueId,
+    handler_set: IR.HandlerSetId,
+    evidence: IR.EvidenceId,
+    local: IR.LocalId,
 
     pub const Intermediate = packed struct {
-        type: Core.TypeId,
-        register: Core.RegisterId,
+        type: IR.TypeId,
+        register: IR.RegisterId,
     };
 
     pub const Immediate = packed struct {
-        type: Core.TypeId,
+        type: IR.TypeId,
         value: u64,
     };
 

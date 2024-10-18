@@ -20,7 +20,7 @@ pub fn build(b: *std.Build) !void {
     });
 
     const Core = b.addModule("Core", .{
-        .root_source_file = b.path("src/Core/root.zig"),
+        .root_source_file = b.path("src/root.zig"),
         .target = defaultTarget,
         .optimize = defaultOptimize,
     });
@@ -30,20 +30,11 @@ pub fn build(b: *std.Build) !void {
     Core.addImport("Rbc:Core", Rbc.module("Core"));
     Core.addImport("Rbc:Builder", Rbc.module("Builder"));
 
-    const Builder = b.addModule("Builder", .{
-        .root_source_file = b.path("src/Builder/root.zig"),
-        .target = defaultTarget,
-        .optimize = defaultOptimize,
-    });
-
-    Builder.addImport("ZigUtils", ZigUtils.module("ZigUtils"));
-    Builder.addImport("Core", Core);
-
     const checkStep = b.step("check", "Run semantic analysis");
     const testStep = b.step("test", "Run unit tests");
 
     const testCore = b.addTest(.{
-        .root_source_file = b.path("src/Core/root.zig"),
+        .root_source_file = b.path("src/root.zig"),
     });
 
     testCore.root_module.addImport("ZigUtils", ZigUtils.module("ZigUtils"));
@@ -51,16 +42,7 @@ pub fn build(b: *std.Build) !void {
     testCore.root_module.addImport("Rbc:Core", Rbc.module("Core"));
     testCore.root_module.addImport("Rbc:Builder", Rbc.module("Builder"));
 
-    const testBuilder = b.addTest(.{
-        .root_source_file = b.path("src/Builder/root.zig"),
-    });
-
-    testBuilder.root_module.addImport("ZigUtils", ZigUtils.module("ZigUtils"));
-    testBuilder.root_module.addImport("Core", &testCore.root_module);
-
     checkStep.dependOn(&testCore.step);
-    checkStep.dependOn(&testBuilder.step);
 
     testStep.dependOn(&b.addRunArtifact(testCore).step);
-    testStep.dependOn(&b.addRunArtifact(testBuilder).step);
 }

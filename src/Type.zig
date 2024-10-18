@@ -1,7 +1,7 @@
 const std = @import("std");
 const MiscUtils = @import("ZigUtils").Misc;
 
-const Core = @import("root.zig");
+const IR = @import("root.zig");
 
 
 pub const Type = union(enum) {
@@ -10,11 +10,11 @@ pub const Type = union(enum) {
     u8: void, u16: void, u32: void, u64: void,
     s8: void, s16: void, s32: void, s64: void,
     f32: void, f64: void,
-    pointer: Core.TypeId,
+    pointer: IR.TypeId,
     array: Type.Array,
-    product: []Core.TypeId,
+    product: []IR.TypeId,
     sum: Sum,
-    raw_sum: []Core.TypeId,
+    raw_sum: []IR.TypeId,
     function: Type.Function,
 
     block: void,
@@ -22,17 +22,17 @@ pub const Type = union(enum) {
     evidence: Type.Function,
 
     pub const Map = struct {
-        inner: std.ArrayHashMapUnmanaged(Core.Type, void, MiscUtils.SimpleHashContext, true) = .{},
+        inner: std.ArrayHashMapUnmanaged(IR.Type, void, MiscUtils.SimpleHashContext, true) = .{},
 
-        /// Calls `Core.Type.clone` on the input, if the type is not found in the map
-        pub fn typeId(self: *Map, allocator: std.mem.Allocator, ty: Core.Type) !Core.TypeId {
+        /// Calls `IR.Type.clone` on the input, if the type is not found in the map
+        pub fn typeId(self: *Map, allocator: std.mem.Allocator, ty: IR.Type) !IR.TypeId {
             if (self.inner.getIndex(ty)) |index| {
                 return @truncate(index);
             }
 
             const index = self.inner.count();
 
-            if (index >= Core.MAX_TYPES) {
+            if (index >= IR.MAX_TYPES) {
                 return error.TooManyTypes;
             }
 
@@ -41,15 +41,15 @@ pub const Type = union(enum) {
             return @truncate(index);
         }
 
-        /// Does not call `Core.Type.clone` on the input
-        pub fn typeIdPreallocated(self: *Map, allocator: std.mem.Allocator, ty: Core.Type) !Core.TypeId {
+        /// Does not call `IR.Type.clone` on the input
+        pub fn typeIdPreallocated(self: *Map, allocator: std.mem.Allocator, ty: IR.Type) !IR.TypeId {
             if (self.inner.getIndex(ty)) |index| {
                 return @truncate(index);
             }
 
             const index = self.inner.count();
 
-            if (index >= Core.MAX_TYPES) {
+            if (index >= IR.MAX_TYPES) {
                 return error.TooManyTypes;
             }
 
@@ -58,7 +58,7 @@ pub const Type = union(enum) {
             return @truncate(index);
         }
 
-        pub fn typeFromNative(self: *const Map, comptime T: type, allocator: std.mem.Allocator) !Core.Type {
+        pub fn typeFromNative(self: *const Map, comptime T: type, allocator: std.mem.Allocator) !IR.Type {
             switch (T) {
                 void => return .void,
                 bool => return .bool,
@@ -67,24 +67,24 @@ pub const Type = union(enum) {
                 f32 => return .f32, f64 => return .f64,
 
                 else => switch (@typeInfo(T)) {
-                    .pointer => |info| return Core.Type { .pointer = try self.typeIdFromNative(info.child, allocator) },
-                    .array => |info| return Core.Type { .array = .{
+                    .pointer => |info| return IR.Type { .pointer = try self.typeIdFromNative(info.child, allocator) },
+                    .array => |info| return IR.Type { .array = .{
                         .length = info.len,
                         .element = try self.typeIdFromNative(info.child, allocator),
                     } },
                     .@"struct" => |info| {
-                        var field_types = allocator.alloc(Core.TypeId, info.fields.len);
+                        var field_types = allocator.alloc(IR.TypeId, info.fields.len);
                         errdefer allocator.free(field_types);
 
                         for (info.fields, 0..) |field, i| {
                             field_types[i] = try self.typeIdFromNative(field.type, allocator);
                         }
 
-                        return Core.Type { .product = field_types };
+                        return IR.Type { .product = field_types };
                     },
                     .@"enum" => |info| return self.typeFromNative(info.tag_type, allocator),
                     .@"union" => |info| {
-                        var field_types = allocator.alloc(Core.TypeId, info.fields.len);
+                        var field_types = allocator.alloc(IR.TypeId, info.fields.len);
                         errdefer allocator.free(field_types);
 
                         for (info.fields, 0..) |field, i| {
@@ -92,29 +92,29 @@ pub const Type = union(enum) {
                         }
 
                         if (info.tag_type) |TT| {
-                            return Core.Type { .sum = .{
+                            return IR.Type { .sum = .{
                                 .discriminator = try self.typeIdFromNative(TT, allocator),
                                 .types = field_types,
                             } };
                         } else {
-                            return Core.Type { .raw_sum = field_types };
+                            return IR.Type { .raw_sum = field_types };
                         }
                     },
                     .@"fn" => |info| {
                         const return_type = try self.typeIdFromNative(info.return_type.?, allocator);
                         const termination_type = try self.typeIdFromNative(void, allocator);
 
-                        const effects = allocator.alloc(Core.EvidenceId, 0);
+                        const effects = allocator.alloc(IR.EvidenceId, 0);
                         errdefer allocator.free(effects);
 
-                        var parameter_types = allocator.alloc(Core.TypeId, info.param_info.len);
+                        var parameter_types = allocator.alloc(IR.TypeId, info.param_info.len);
                         errdefer allocator.free(parameter_types);
 
                         for (info.param_info, 0..) |param, i| {
                             parameter_types[i] = try self.typeIdFromNative(param.type, allocator);
                         }
 
-                        return Core.Type { .function = .{
+                        return IR.Type { .function = .{
                             .return_type = return_type,
                             .termination_type = termination_type,
                             .effects = effects,
@@ -122,19 +122,19 @@ pub const Type = union(enum) {
                         } };
                     },
 
-                    else => @compileError("cannot convert type `" ++ @typeName(T) ++ "` to Core.Type"),
+                    else => @compileError("cannot convert type `" ++ @typeName(T) ++ "` to IR.Type"),
                 }
             }
         }
 
-        pub fn typeIdFromNative(self: *Map, comptime T: type, allocator: std.mem.Allocator) !Core.TypeId {
+        pub fn typeIdFromNative(self: *Map, comptime T: type, allocator: std.mem.Allocator) !IR.TypeId {
             const ty = try self.typeFromNative(T);
-            errdefer Core.Type.deinit(ty, allocator);
+            errdefer IR.Type.deinit(ty, allocator);
 
             return self.typeIdPreallocated(allocator, ty);
         }
 
-        pub fn getType(self: *Map, id: Core.TypeId) !Core.Type {
+        pub fn getType(self: *Map, id: IR.TypeId) !IR.Type {
             if (id >= self.inner.count()) {
                 return error.InvalidType;
             }
@@ -153,7 +153,7 @@ pub const Type = union(enum) {
     };
 
     pub const BASIC_TYPE_IDS = type_ids: {
-        var type_ids = [1]Core.TypeId { undefined } ** BASIC_TYPE_NAMES.len;
+        var type_ids = [1]IR.TypeId { undefined } ** BASIC_TYPE_NAMES.len;
 
         for (0..BASIC_TYPE_NAMES.len) |i| {
             type_ids[i] = @truncate(i);
@@ -173,13 +173,13 @@ pub const Type = union(enum) {
     };
 
     pub const Sum = struct {
-        discriminator: Core.TypeId,
-        types: []Core.TypeId,
+        discriminator: IR.TypeId,
+        types: []IR.TypeId,
 
         pub fn clone(self: *const Type.Sum, allocator: std.mem.Allocator) !Type.Sum {
             return Type.Sum {
                 .discriminator = self.discriminator,
-                .types = try allocator.dupe(Core.TypeId, self.types),
+                .types = try allocator.dupe(IR.TypeId, self.types),
             };
         }
 
@@ -190,14 +190,14 @@ pub const Type = union(enum) {
 
     pub const Array = struct {
         length: usize,
-        element: Core.TypeId,
+        element: IR.TypeId,
     };
 
     pub const Function = struct {
-        return_type: Core.TypeId,
-        termination_type: Core.TypeId,
-        effects: []Core.EvidenceId,
-        parameter_types: []Core.TypeId,
+        return_type: IR.TypeId,
+        termination_type: IR.TypeId,
+        effects: []IR.EvidenceId,
+        parameter_types: []IR.TypeId,
 
         pub fn deinit(self: Type.Function, allocator: std.mem.Allocator) void {
             allocator.free(self.effects);
@@ -205,10 +205,10 @@ pub const Type = union(enum) {
         }
 
         pub fn clone(self: *const Type.Function, allocator: std.mem.Allocator) !Type.Function {
-            const effects = try allocator.dupe(Core.EvidenceId, self.effects);
+            const effects = try allocator.dupe(IR.EvidenceId, self.effects);
             errdefer allocator.free(effects);
 
-            const parameter_types = try allocator.dupe(Core.TypeId, self.parameter_types);
+            const parameter_types = try allocator.dupe(IR.TypeId, self.parameter_types);
             errdefer allocator.free(parameter_types);
 
             return Type.Function {
@@ -222,9 +222,9 @@ pub const Type = union(enum) {
 
     pub fn clone(self: *const Type, allocator: std.mem.Allocator) !Type {
         switch (self.*) {
-            .product => |field_types| return Type { .product = try allocator.dupe(Core.TypeId, field_types) },
+            .product => |field_types| return Type { .product = try allocator.dupe(IR.TypeId, field_types) },
             .sum => |sum| return Type { .sum = try sum.clone(allocator) },
-            .raw_sum => |field_types| return Type { .raw_sum = try allocator.dupe(Core.TypeId, field_types) },
+            .raw_sum => |field_types| return Type { .raw_sum = try allocator.dupe(IR.TypeId, field_types) },
             .function => |fun| return Type { .function = try fun.clone(allocator) },
             .evidence => |fun| return Type { .evidence = try fun.clone(allocator) },
             inline else => return self.*,

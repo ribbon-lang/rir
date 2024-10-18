@@ -1,46 +1,41 @@
 const std = @import("std");
 
-const Core = @import("Core");
+const IR = @import("root.zig");
 
-const Builder = @import("root.zig");
-const BlockBuilder = Builder.BlockBuilder;
-const HandlerSetBuilder = Builder.HandlerSetBuilder;
+const Function = @This();
 
 
-const FunctionBuilder = @This();
+root: *IR,
+id: IR.FunctionId,
+type: IR.TypeId,
+blocks: std.ArrayListUnmanaged(*IR.Block),
+local_types: std.ArrayListUnmanaged(IR.TypeId),
+parent: ?*Function = null,
+upvalue_indices: std.ArrayListUnmanaged(IR.LocalId) = .{},
+handler_sets: std.ArrayListUnmanaged(*IR.HandlerSet) = .{},
 
 
-root: *Builder,
-id: Core.FunctionId,
-type: Core.TypeId,
-blocks: std.ArrayListUnmanaged(*BlockBuilder),
-local_types: std.ArrayListUnmanaged(Core.TypeId),
-parent: ?*FunctionBuilder = null,
-upvalue_indices: std.ArrayListUnmanaged(Core.LocalId) = .{},
-handler_sets: std.ArrayListUnmanaged(*HandlerSetBuilder) = .{},
-
-
-pub fn init(root: *Builder, id: Core.FunctionId, tyId: Core.TypeId) !*FunctionBuilder {
-    const ptr = try root.allocator.create(FunctionBuilder);
+pub fn init(root: *IR, id: IR.FunctionId, tyId: IR.TypeId) !*Function {
+    const ptr = try root.allocator.create(Function);
 
     const ty = try root.getType(tyId);
     const funcTy = try ty.asFunction();
 
-    var blocks = std.ArrayListUnmanaged(*BlockBuilder){};
+    var blocks = std.ArrayListUnmanaged(*IR.Block){};
     errdefer blocks.deinit(root.allocator);
 
-    const entryBlock = try BlockBuilder.init(ptr, null, 0);
+    const entryBlock = try IR.Block.init(ptr, null, 0);
 
     try blocks.append(root.allocator, entryBlock);
 
-    var local_types = std.ArrayListUnmanaged(Core.TypeId){};
+    var local_types = std.ArrayListUnmanaged(IR.TypeId){};
     errdefer local_types.deinit(root.allocator);
 
     for (funcTy.parameter_types) |param| {
         try local_types.append(root.allocator, param);
     }
 
-    ptr.* = FunctionBuilder {
+    ptr.* = Function {
         .root = root,
         .id = id,
         .type = tyId,
@@ -51,10 +46,10 @@ pub fn init(root: *Builder, id: Core.FunctionId, tyId: Core.TypeId) !*FunctionBu
     return ptr;
 }
 
-pub fn local(self: *FunctionBuilder, tyId: Core.TypeId) !Core.LocalId {
+pub fn local(self: *Function, tyId: IR.TypeId) !IR.LocalId {
     const index = self.local_types.items.len;
 
-    if (index >= Core.MAX_LOCALS) {
+    if (index >= IR.MAX_LOCALS) {
         return error.TooManyLocals;
     }
 
@@ -63,7 +58,7 @@ pub fn local(self: *FunctionBuilder, tyId: Core.TypeId) !Core.LocalId {
     return @truncate(index);
 }
 
-pub fn getLocalType(self: *const FunctionBuilder, l: Core.LocalId) !Core.TypeId {
+pub fn getLocalType(self: *const Function, l: IR.LocalId) !IR.TypeId {
     if (l >= self.local_types.items.len) {
         return error.InvalidRegister;
     }
@@ -71,13 +66,13 @@ pub fn getLocalType(self: *const FunctionBuilder, l: Core.LocalId) !Core.TypeId 
     return self.local_types.items[l];
 }
 
-pub fn upvalue(self: *FunctionBuilder, parentLocal: Core.LocalId) !Core.UpvalueId {
+pub fn upvalue(self: *Function, parentLocal: IR.LocalId) !IR.UpvalueId {
     if (self.parent) |parent| {
         _ = try parent.getLocalType(parentLocal);
 
         const index = self.upvalue_indices.items.len;
 
-        if (index >= Core.MAX_LOCALS) {
+        if (index >= IR.MAX_LOCALS) {
             return error.TooManyUpvalues;
         }
 
@@ -89,7 +84,7 @@ pub fn upvalue(self: *FunctionBuilder, parentLocal: Core.LocalId) !Core.UpvalueI
     }
 }
 
-pub fn getUpvalueType(self: *const FunctionBuilder, u: Core.UpvalueId) !Core.TypeId {
+pub fn getUpvalueType(self: *const Function, u: IR.UpvalueId) !IR.TypeId {
     if (self.parent) |parent| {
         if (u >= self.upvalue_indices.items.len) {
             return error.InvalidRegister;
@@ -101,25 +96,25 @@ pub fn getUpvalueType(self: *const FunctionBuilder, u: Core.UpvalueId) !Core.Typ
     }
 }
 
-pub fn entry(self: *FunctionBuilder) !*BlockBuilder {
+pub fn entry(self: *Function) !*IR.Block {
     return self.blocks.items[0];
 }
 
-pub fn block(self: *FunctionBuilder, parent: *BlockBuilder) !*BlockBuilder {
+pub fn block(self: *Function, parent: *IR.Block) !*IR.Block {
     const index = self.blocks.items.len;
 
-    if (index >= Core.MAX_BLOCKS) {
+    if (index >= IR.MAX_BLOCKS) {
         return error.TooManyBlocks;
     }
 
-    const newBlock = try BlockBuilder.init(self, parent, @truncate(index));
+    const newBlock = try IR.Block.init(self, parent, @truncate(index));
 
     try self.blocks.append(self.root.allocator, newBlock);
 
     return newBlock;
 }
 
-pub fn getBlock(self: *FunctionBuilder, id: Core.BlockId) !*BlockBuilder {
+pub fn getBlock(self: *Function, id: IR.BlockId) !*IR.Block {
     if (id >= self.blocks.items.len) {
         return error.InvalidBlock;
     }
@@ -127,21 +122,21 @@ pub fn getBlock(self: *FunctionBuilder, id: Core.BlockId) !*BlockBuilder {
     return self.blocks.items[id];
 }
 
-pub fn handlerSet(self: *FunctionBuilder) !*HandlerSetBuilder {
+pub fn handlerSet(self: *Function) !*IR.HandlerSet {
     const index = self.handler_sets.items.len;
 
-    if (index >= Core.MAX_HANDLER_SETS) {
+    if (index >= IR.MAX_HANDLER_SETS) {
         return error.TooManyHandlerSets;
     }
 
-    const builder = try HandlerSetBuilder.init(self, @truncate(index));
+    const builder = try IR.HandlerSet.init(self, @truncate(index));
 
     try self.handler_sets.append(self.root.allocator, builder);
 
     return builder;
 }
 
-pub fn getHandlerSet(self: *FunctionBuilder, id: Core.HandlerSetId) !*HandlerSetBuilder {
+pub fn getHandlerSet(self: *Function, id: IR.HandlerSetId) !*IR.HandlerSet {
     if (id >= self.handler_sets.items.len) {
         return error.InvalidHandlerSet;
     }

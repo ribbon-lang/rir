@@ -2,7 +2,7 @@ const std = @import("std");
 const ISA = @import("ISA");
 const RbcCore = @import("Rbc:Core");
 
-const Core = @import("root.zig");
+const IR = @import("root.zig");
 
 
 pub const ZeroCheck = enum(u1) { zero, non_zero };
@@ -58,25 +58,25 @@ pub const Data = packed union {
     add: void, sub: void, mul: void, div: void, rem: void, neg: void,
     band: void, bor: void, bxor: void, bnot: void, bshiftl: void, bshiftr: void,
     eq: void, ne: void, lt: void, gt: void, le: void, ge: void,
-    ext: Core.BitSize, trunc: Core.BitSize, cast: Core.TypeId,
+    ext: IR.BitSize, trunc: IR.BitSize, cast: IR.TypeId,
 
-    new_local: Core.TypeId,
-    ref_local: Core.LocalId,
-    ref_block: Core.BlockId,
-    ref_function: Core.FunctionId,
-    ref_global: Core.GlobalId,
-    ref_upvalue: Core.UpvalueId,
+    new_local: IR.TypeId,
+    ref_local: IR.LocalId,
+    ref_block: IR.BlockId,
+    ref_function: IR.FunctionId,
+    ref_global: IR.GlobalId,
+    ref_upvalue: IR.UpvalueId,
 
     discard: void,
 
     im_b: Immediate(u8),
     im_s: Immediate(u16),
     im_i: Immediate(u32),
-    im_w: Core.TypeId,
+    im_w: IR.TypeId,
 
     pub fn Immediate (comptime T: type) type {
         return packed struct {
-            type: Core.TypeId,
+            type: IR.TypeId,
             data: T,
         };
     }
