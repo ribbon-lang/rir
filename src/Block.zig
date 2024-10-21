@@ -169,7 +169,7 @@ pub fn term(self: *Block) !void {
     try self.exitOp(.term, {});
 }
 
-pub fn alloca(self: *Block, x: IR.RegisterLocalOffset) !void {
+pub fn alloca(self: *Block, x: IR.RegisterOffset) !void {
     try self.op(.alloca, x);
 }
 
@@ -277,11 +277,11 @@ pub fn ge(self: *Block) !void {
     try self.op(.ge, {});
 }
 
-pub fn ext(self: *Block, x: IR.BitSize) !void {
+pub fn ext(self: *Block, x: IR.Op.BitSize) !void {
     try self.op(.ext, x);
 }
 
-pub fn trunc(self: *Block, x: IR.BitSize) !void {
+pub fn trunc(self: *Block, x: IR.Op.BitSize) !void {
     try self.op(.trunc, x);
 }
 
@@ -303,11 +303,23 @@ pub fn ref_block(self: *Block, x: IR.BlockId) !void {
 }
 
 pub fn ref_function(self: *Block, x: IR.FunctionId) !void {
-    try self.op(.ref_function, x);
+    try self.op(.ref_function, .{ .module = self.function.root.id, .id = x });
+}
+
+pub fn ref_extern_function(self: *Block, m: IR.ModuleId, x: IR.FunctionId) !void {
+    try self.op(.ref_function, .{ .module = m, .id = x });
+}
+
+pub fn ref_foreign(self: *Block, x: IR.ForeignId) !void {
+    try self.op(.ref_foreign, x);
 }
 
 pub fn ref_global(self: *Block, x: IR.GlobalId) !void {
-    try self.op(.ref_global, x);
+    try self.op(.ref_global, .{ .module = self.function.root.id, .id = x });
+}
+
+pub fn ref_extern_global(self: *Block, m: IR.ModuleId, x: IR.GlobalId) !void {
+    try self.op(.ref_global, .{ .module = m, .id = x });
 }
 
 pub fn ref_upvalue(self: *Block, x: IR.UpvalueId) !void {

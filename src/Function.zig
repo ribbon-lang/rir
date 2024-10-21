@@ -15,6 +15,53 @@ upvalue_indices: std.ArrayListUnmanaged(IR.LocalId) = .{},
 handler_sets: std.ArrayListUnmanaged(*IR.HandlerSet) = .{},
 
 
+pub const Foreign = struct {
+    id: IR.ForeignId,
+    type: IR.TypeId,
+    locals: []IR.TypeId,
+};
+
+pub const ForeignList = struct {
+    allocator: std.mem.Allocator,
+    inner: std.ArrayListUnmanaged(Foreign),
+
+    /// Calls `allocator.dupe` on the input locals
+    pub fn foreign(self: *ForeignList, tyId: IR.TypeId, locals: []IR.TypeId) !IR.ForeignId {
+        const dupeLocals = try self.allocator.dupe(IR.TypeId, locals);
+        errdefer self.allocator.free(dupeLocals);
+
+        return self.foreignPreallocated(tyId, dupeLocals);
+    }
+
+    /// Does not call `allocator.dupe` on the input locals
+    pub fn foreignPreallocated(self: *ForeignList, tyId: IR.TypeId, locals: []IR.TypeId) !IR.ForeignId {
+        const index = self.inner.items.len;
+
+        if (index >= IR.MAX_FUNCTIONS) {
+            return error.TooManyForeignFunctions;
+        }
+
+        const f = Foreign {
+            .id = @truncate(index),
+            .type = tyId,
+            .locals = locals,
+        };
+
+        try self.inner.append(self.allocator, f);
+
+        return f.id;
+    }
+
+    pub fn getForeign(self: *ForeignList, id: IR.ForeignId) !Foreign {
+        if (id >= self.inner.items.len) {
+            return error.InvalidForeignFunction;
+        }
+
+        return self.inner.items[id];
+    }
+};
+
+
 pub fn init(root: *IR, id: IR.FunctionId, tyId: IR.TypeId) !*Function {
     const ptr = try root.allocator.create(Function);
 

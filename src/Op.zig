@@ -7,6 +7,7 @@ const IR = @import("root.zig");
 
 pub const ZeroCheck = enum(u1) { zero, non_zero };
 pub const OptZeroCheck = enum(u2) { none, zero, non_zero };
+pub const BitSize = enum(u2) { b8, b16, b32, b64 };
 
 pub const Code = enum(u8) {
     // ISA instructions:
@@ -23,6 +24,7 @@ pub const Code = enum(u8) {
     ref_local,
     ref_block,
     ref_function,
+    ref_foreign,
     ref_global,
     ref_upvalue,
 
@@ -58,13 +60,14 @@ pub const Data = packed union {
     add: void, sub: void, mul: void, div: void, rem: void, neg: void,
     band: void, bor: void, bxor: void, bnot: void, bshiftl: void, bshiftr: void,
     eq: void, ne: void, lt: void, gt: void, le: void, ge: void,
-    ext: IR.BitSize, trunc: IR.BitSize, cast: IR.TypeId,
+    ext: BitSize, trunc: BitSize, cast: IR.TypeId,
 
     new_local: IR.TypeId,
     ref_local: IR.LocalId,
     ref_block: IR.BlockId,
-    ref_function: IR.FunctionId,
-    ref_global: IR.GlobalId,
+    ref_function: ExternRef(IR.FunctionId),
+    ref_foreign: IR.ForeignId,
+    ref_global: ExternRef(IR.GlobalId),
     ref_upvalue: IR.UpvalueId,
 
     discard: void,
@@ -78,6 +81,13 @@ pub const Data = packed union {
         return packed struct {
             type: IR.TypeId,
             data: T,
+        };
+    }
+
+    pub fn ExternRef (comptime T: type) type {
+        return packed struct {
+            module: IR.ModuleId,
+            id: T,
         };
     }
 

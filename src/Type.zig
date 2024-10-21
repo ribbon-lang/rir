@@ -22,10 +22,17 @@ pub const Type = union(enum) {
     evidence: Type.Function,
 
     pub const Map = struct {
+        allocator: std.mem.Allocator,
         inner: std.ArrayHashMapUnmanaged(IR.Type, void, MiscUtils.SimpleHashContext, true) = .{},
 
+        /// Allocator provided should be an arena or a similar allocator,
+        /// that does not care about freeing individual allocations
+        pub fn init(allocator: std.mem.Allocator) !Map {
+            return Map { .allocator = allocator };
+        }
+
         /// Calls `IR.Type.clone` on the input, if the type is not found in the map
-        pub fn typeId(self: *Map, allocator: std.mem.Allocator, ty: IR.Type) !IR.TypeId {
+        pub fn typeId(self: *Map, ty: IR.Type) !IR.TypeId {
             if (self.inner.getIndex(ty)) |index| {
                 return @truncate(index);
             }
@@ -36,13 +43,13 @@ pub const Type = union(enum) {
                 return error.TooManyTypes;
             }
 
-            try self.inner.put(allocator, try ty.clone(allocator), {});
+            try self.inner.put(self.allocator, try ty.clone(self.allocator), {});
 
             return @truncate(index);
         }
 
         /// Does not call `IR.Type.clone` on the input
-        pub fn typeIdPreallocated(self: *Map, allocator: std.mem.Allocator, ty: IR.Type) !IR.TypeId {
+        pub fn typeIdPreallocated(self: *Map, ty: IR.Type) !IR.TypeId {
             if (self.inner.getIndex(ty)) |index| {
                 return @truncate(index);
             }
@@ -53,12 +60,12 @@ pub const Type = union(enum) {
                 return error.TooManyTypes;
             }
 
-            try self.inner.put(allocator, ty, {});
+            try self.inner.put(self.allocator, ty, {});
 
             return @truncate(index);
         }
 
-        pub fn typeFromNative(self: *const Map, comptime T: type, allocator: std.mem.Allocator) !IR.Type {
+        pub fn typeFromNative(self: *const Map, comptime T: type) !IR.Type {
             switch (T) {
                 void => return .void,
                 bool => return .bool,
@@ -67,33 +74,33 @@ pub const Type = union(enum) {
                 f32 => return .f32, f64 => return .f64,
 
                 else => switch (@typeInfo(T)) {
-                    .pointer => |info| return IR.Type { .pointer = try self.typeIdFromNative(info.child, allocator) },
+                    .pointer => |info| return IR.Type { .pointer = try self.typeIdFromNative(info.child) },
                     .array => |info| return IR.Type { .array = .{
                         .length = info.len,
-                        .element = try self.typeIdFromNative(info.child, allocator),
+                        .element = try self.typeIdFromNative(info.child),
                     } },
                     .@"struct" => |info| {
-                        var field_types = allocator.alloc(IR.TypeId, info.fields.len);
-                        errdefer allocator.free(field_types);
+                        var field_types = self.allocator.alloc(IR.TypeId, info.fields.len);
+                        errdefer self.allocator.free(field_types);
 
                         for (info.fields, 0..) |field, i| {
-                            field_types[i] = try self.typeIdFromNative(field.type, allocator);
+                            field_types[i] = try self.typeIdFromNative(field.type);
                         }
 
                         return IR.Type { .product = field_types };
                     },
-                    .@"enum" => |info| return self.typeFromNative(info.tag_type, allocator),
+                    .@"enum" => |info| return self.typeFromNative(info.tag_type),
                     .@"union" => |info| {
-                        var field_types = allocator.alloc(IR.TypeId, info.fields.len);
-                        errdefer allocator.free(field_types);
+                        var field_types = self.allocator.alloc(IR.TypeId, info.fields.len);
+                        errdefer self.allocator.free(field_types);
 
                         for (info.fields, 0..) |field, i| {
-                            field_types[i] = try self.typeIdFromNative(field.type, allocator);
+                            field_types[i] = try self.typeIdFromNative(field.type);
                         }
 
                         if (info.tag_type) |TT| {
                             return IR.Type { .sum = .{
-                                .discriminator = try self.typeIdFromNative(TT, allocator),
+                                .discriminator = try self.typeIdFromNative(TT),
                                 .types = field_types,
                             } };
                         } else {
@@ -101,17 +108,17 @@ pub const Type = union(enum) {
                         }
                     },
                     .@"fn" => |info| {
-                        const return_type = try self.typeIdFromNative(info.return_type.?, allocator);
-                        const termination_type = try self.typeIdFromNative(void, allocator);
+                        const return_type = try self.typeIdFromNative(info.return_type.?);
+                        const termination_type = try self.typeIdFromNative(void);
 
-                        const effects = allocator.alloc(IR.EvidenceId, 0);
-                        errdefer allocator.free(effects);
+                        const effects = self.allocator.alloc(IR.EvidenceId, 0);
+                        errdefer self.allocator.free(effects);
 
-                        var parameter_types = allocator.alloc(IR.TypeId, info.param_info.len);
-                        errdefer allocator.free(parameter_types);
+                        var parameter_types = self.allocator.alloc(IR.TypeId, info.param_info.len);
+                        errdefer self.allocator.free(parameter_types);
 
                         for (info.param_info, 0..) |param, i| {
-                            parameter_types[i] = try self.typeIdFromNative(param.type, allocator);
+                            parameter_types[i] = try self.typeIdFromNative(param.type);
                         }
 
                         return IR.Type { .function = .{
@@ -127,11 +134,11 @@ pub const Type = union(enum) {
             }
         }
 
-        pub fn typeIdFromNative(self: *Map, comptime T: type, allocator: std.mem.Allocator) !IR.TypeId {
+        pub fn typeIdFromNative(self: *Map, comptime T: type) !IR.TypeId {
             const ty = try self.typeFromNative(T);
-            errdefer IR.Type.deinit(ty, allocator);
+            errdefer IR.Type.deinit(ty, self.allocator);
 
-            return self.typeIdPreallocated(allocator, ty);
+            return self.typeIdPreallocated(ty);
         }
 
         pub fn getType(self: *Map, id: IR.TypeId) !IR.Type {

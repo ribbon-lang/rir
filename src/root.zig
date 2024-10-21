@@ -6,6 +6,7 @@ const RbcBuilder = @import("Rbc:Builder");
 
 const IR = @This();
 
+pub const Backend = @import("Backend/root.zig");
 pub const Block = @import("Block.zig");
 pub const Function = @import("Function.zig");
 pub const HandlerSet = @import("HandlerSet.zig");
@@ -15,11 +16,12 @@ pub const Type = @import("Type.zig").Type;
 
 
 allocator: std.mem.Allocator,
-type_map: IR.Type.Map = .{},
-global_list: std.ArrayListUnmanaged(IR.Global) = .{},
+id: ModuleId,
+type_map: *Type.Map,
+foreign_function_list: *Function.ForeignList,
+global_list: std.ArrayListUnmanaged(Global) = .{},
 function_list: std.ArrayListUnmanaged(*Function) = .{},
-foreign_function_list: std.ArrayListUnmanaged(IR.ForeignFunction) = .{},
-evidence_list: std.ArrayListUnmanaged(IR.TypeId) = .{},
+evidence_list: std.ArrayListUnmanaged(TypeId) = .{},
 
 
 pub const MAX_TYPES = std.math.maxInt(TypeId);
@@ -32,7 +34,9 @@ pub const MAX_REGISTERS = RbcCore.MAX_REGISTERS;
 pub const MAX_LOCALS = std.math.maxInt(LocalId);
 
 
+pub const ModuleId = u16;
 pub const RegisterId = RbcCore.RegisterIndex;
+pub const RegisterOffset = RbcCore.RegisterLocalOffset;
 pub const HandlerSetId = RbcCore.HandlerSetIndex;
 pub const EvidenceId = RbcCore.EvidenceIndex;
 pub const TypeId = RbcCore.Info.TypeIndex;
@@ -42,8 +46,6 @@ pub const ForeignId = RbcCore.ForeignId;
 pub const GlobalId = RbcCore.GlobalIndex;
 pub const UpvalueId = RbcCore.UpvalueIndex;
 pub const LocalId = u16;
-
-pub const BitSize = enum(u2) { b8, b16, b32, b64 };
 
 pub const Instruction = packed struct {
     code: Op.Code,
@@ -62,45 +64,56 @@ pub const Global = struct {
     value: []u8,
 };
 
-pub const ForeignFunction = struct {
-    id: ForeignId,
-    type: TypeId,
-    locals: []TypeId,
-};
-
 
 /// Allocator provided should be an arena or a similar allocator,
 /// that does not care about freeing individual allocations
-pub fn init(allocator: std.mem.Allocator) IR {
+pub fn init(allocator: std.mem.Allocator, id: ModuleId, typeMap: *Type.Map, foreignFunctionList: *Function.ForeignList) IR {
     return IR {
         .allocator = allocator,
+        .id = id,
+        .type_map = typeMap,
+        .foreign_function_list = foreignFunctionList,
     };
 }
 
-/// Calls `IR.Type.clone` on the input, if the type is not found in the map
-pub inline fn typeId(self: *IR, ty: IR.Type) !IR.TypeId {
-    return self.type_map.typeId(self.allocator, ty);
+/// Calls `Type.clone` on the input, if the type is not found in the map
+pub inline fn typeId(self: *IR, ty: Type) !TypeId {
+    return self.type_map.typeId(ty);
 }
 
-/// Does not call `IR.Type.clone` on the input
-pub inline fn typeIdPreallocated(self: *IR, ty: IR.Type) !IR.TypeId {
-    return self.type_map.typeIdPreallocated(self.allocator, ty);
+/// Does not call `Type.clone` on the input
+pub inline fn typeIdPreallocated(self: *IR, ty: Type) !TypeId {
+    return self.type_map.typeIdPreallocated(ty);
 }
 
-pub inline fn typeFromNative(self: *const IR, comptime T: type) !IR.Type {
-    return self.type_map.typeFromNative(T, self.allocator);
+pub inline fn typeFromNative(self: *const IR, comptime T: type) !Type {
+    return self.type_map.typeFromNative(T);
 }
 
-pub inline fn typeIdFromNative(self: *IR, comptime T: type) !IR.TypeId {
-    return self.type_map.typeIdFromNative(T, self.allocator);
+pub inline fn typeIdFromNative(self: *IR, comptime T: type) !TypeId {
+    return self.type_map.typeIdFromNative(T);
 }
 
-pub fn getType(self: *IR, id: IR.TypeId) !IR.Type {
+pub inline fn getType(self: *IR, id: TypeId) !Type {
     return self.type_map.getType(id);
 }
 
+/// Calls `allocator.dupe` on the input locals
+pub inline fn foreign(self: *IR, tyId: TypeId, locals: []TypeId) !ForeignId {
+    return self.foreign_function_list.foreign(tyId, locals);
+}
+
+/// Does not call `allocator.dupe` on the input locals
+pub inline fn foreignPreallocated(self: *IR, tyId: TypeId, locals: []TypeId) !ForeignId {
+    return self.foreign_function_list.foreignPreallocated(tyId, locals);
+}
+
+pub inline fn getForeign(self: *IR, id: ForeignId) !Function.Foreign {
+    return self.foreign_function_list.getForeign(id);
+}
+
 /// Calls `allocator.dupe` on the input bytes
-pub fn globalFromBytes(self: *IR, tyId: IR.TypeId, bytes: []const u8) !IR.GlobalId {
+pub fn globalFromBytes(self: *IR, tyId: TypeId, bytes: []const u8) !GlobalId {
     const dupeBytes = try self.allocator.dupe(u8, bytes);
     errdefer self.allocator.free(dupeBytes);
 
@@ -108,14 +121,14 @@ pub fn globalFromBytes(self: *IR, tyId: IR.TypeId, bytes: []const u8) !IR.Global
 }
 
 /// Does not call `allocator.dupe` on the input bytes
-pub fn globalFromBytesPreallocated(self: *IR, tyId: IR.TypeId, bytes: []u8) !IR.GlobalId {
+pub fn globalFromBytesPreallocated(self: *IR, tyId: TypeId, bytes: []u8) !GlobalId {
     const index = self.global_list.items.len;
 
-    if (index >= IR.MAX_GLOBALS) {
+    if (index >= MAX_GLOBALS) {
         return error.TooManyGlobals;
     }
 
-    const global = IR.Global {
+    const global = Global {
         .id = @truncate(index),
         .type = tyId,
         .value = bytes,
@@ -126,14 +139,14 @@ pub fn globalFromBytesPreallocated(self: *IR, tyId: IR.TypeId, bytes: []u8) !IR.
     return global.id;
 }
 
-pub fn globalFromNative(self: *IR, value: anytype) !IR.GlobalId {
+pub fn globalFromNative(self: *IR, value: anytype) !GlobalId {
     const T = @TypeOf(value);
     const tyId = try self.typeIdFromNative(T);
 
     return self.globalFromBytes(tyId, @as([*]const u8, @ptrCast(&value))[0..@sizeOf(T)]);
 }
 
-pub fn getGlobal(self: *IR, id: IR.GlobalId) !IR.Global {
+pub fn getGlobal(self: *IR, id: GlobalId) !Global {
     if (id >= self.global_list.items.len) {
         return error.InvalidGlobal;
     }
@@ -141,10 +154,10 @@ pub fn getGlobal(self: *IR, id: IR.GlobalId) !IR.Global {
     return self.global_list.items[id];
 }
 
-pub fn function(self: *IR, tyId: IR.TypeId) !*Function {
+pub fn function(self: *IR, tyId: TypeId) !*Function {
     const index = self.function_list.items.len;
 
-    if (index >= IR.MAX_FUNCTIONS) {
+    if (index >= MAX_FUNCTIONS) {
         return error.TooManyFunctions;
     }
 
@@ -155,7 +168,7 @@ pub fn function(self: *IR, tyId: IR.TypeId) !*Function {
     return builder;
 }
 
-pub fn getFunction(self: *IR, id: IR.FunctionId) !*Function {
+pub fn getFunction(self: *IR, id: FunctionId) !*Function {
     if (id >= self.function_list.items.len) {
         return error.InvalidFunction;
     }
@@ -163,45 +176,10 @@ pub fn getFunction(self: *IR, id: IR.FunctionId) !*Function {
     return self.function_list.items[id];
 }
 
-/// Calls `allocator.dupe` on the input locals
-pub fn foreignFunction(self: *IR, tyId: IR.TypeId, locals: []IR.TypeId) !IR.ForeignId {
-    const dupeLocals = try self.allocator.dupe(IR.TypeId, locals);
-    errdefer self.allocator.free(dupeLocals);
-
-    return self.foreignFunctionPreallocated(tyId, dupeLocals);
-}
-
-/// Does not call `allocator.dupe` on the input locals
-pub fn foreignFunctionPreallocated(self: *IR, tyId: IR.TypeId, locals: []IR.TypeId) !IR.ForeignId {
-    const index = self.foreign_function_list.items.len;
-
-    if (index >= IR.MAX_FUNCTIONS) {
-        return error.TooManyForeignFunctions;
-    }
-
-    const foreign = IR.ForeignFunction {
-        .id = @truncate(index),
-        .type = tyId,
-        .locals = locals,
-    };
-
-    try self.foreign_function_list.append(self.allocator, foreign);
-
-    return foreign.id;
-}
-
-pub fn getForeignFunction(self: *IR, id: IR.ForeignId) !IR.ForeignFunction {
-    if (id >= self.foreign_function_list.items.len) {
-        return error.InvalidForeignFunction;
-    }
-
-    return self.foreign_function_list.items[id];
-}
-
-pub fn evidence(self: *IR, tyId: IR.TypeId) !IR.EvidenceId {
+pub fn evidence(self: *IR, tyId: TypeId) !EvidenceId {
     const index = self.evidence_list.items.len;
 
-    if (index >= IR.MAX_EVIDENCE) {
+    if (index >= MAX_EVIDENCE) {
         return error.TooManyEvidence;
     }
 
@@ -210,10 +188,15 @@ pub fn evidence(self: *IR, tyId: IR.TypeId) !IR.EvidenceId {
     return @truncate(index);
 }
 
-pub fn getEvidence(self: *IR, id: IR.EvidenceId) !IR.TypeId {
+pub fn getEvidence(self: *IR, id: EvidenceId) !TypeId {
     if (id >= self.evidence_list.items.len) {
         return error.InvalidEvidence;
     }
 
     return self.evidence_list.items[id];
+}
+
+
+test {
+    std.testing.refAllDeclsRecursive(IR);
 }
